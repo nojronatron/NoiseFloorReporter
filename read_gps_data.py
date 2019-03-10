@@ -1,8 +1,8 @@
 # Goal: Read GPS puck serial data
 # Actual output: Writes parsed GPGGA NMEA Lat & Long to 'beacon_data.txt'
 # GPS puck used for creation & testing is a BU-353S4; COMn 4800 baud, 8 data, No parity, 1 stop, xon/xoff
-#   Example: 47°48'21.16", -122°15'5.75", 1/25/2019 15:56:13, 14240000, -116.5, 1.0
-#   Headers: LatDD, LongDD, Date(local), Time(24local), Dial Hz, Signal dB, SNR dB
+#   Example: 47°48'21.16", -122°15'5.75", 1/25/2019 15:56:13, 14240000, -116.5, 1.0, 10.0
+#   Headers: LatDD, LongDD, Date(local), Time(24local), Dial Hz, Signal dB, SNR dB, SNR_Weight
 #
 # How to use: You will need to run this script from a trigger ex: Scheduled Task (date, time, etc) python.exe -s 'read_gps_data.py'
 # Note: If you try to use this file in Windows when GPS is in use by APRS (ex: Direwolf) it will fail.
@@ -16,29 +16,38 @@
 # 10-Mar-2019:
 #     Removed dead/comment code
 #     Added snr_weight variable - an indicator of LEVEL OF NOISE (low noise = more negative; more noise = more positive)
+#     Enhanced get_serial_nmea() to interrogate the GPS Serial Port and return the data on its own or via input from a caller
 
 import sys
 import string
 import serial
 from pynmea import nmea
 
-def get_serial_nmea():
+def get_serial_nmea(port_num=0):
     gpgga = nmea.GPGGA()
-
-    try:
-        # TODO: Make port and baudrate arguments to script execution
-        ser = serial.Serial(
-            port='COM7',  # Edit com port to match your GPS receiver COM number e.g. COM3 or COM8
-            baudrate=4800,
-            parity=serial.PARITY_NONE,
-            stopbits=serial.STOPBITS_ONE,
-            bytesize=serial.EIGHTBITS,
-            timeout=1
-        )
-    except serial.SerialException as e:
-        sys.stderr.write('Could not open serial port {}: {}\n'.format(ser.name, e))
-        ser.close()
-        sys.exit(1)
+    port_num = 1 if port_num == 0 else port_num
+    trying = True
+    while trying:
+        com_port = 'COM{0}'.format(port_num)
+        try:
+            # print('attempting com_port {0}'.format(com_port))
+            ser = serial.Serial(
+                port=str(com_port),  # Ports 1 thru 10 will be checked and nmea data returned if GPS Puck found
+                baudrate=4800,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                bytesize=serial.EIGHTBITS,
+                timeout=1
+            )
+            test_data = ser.readline()
+            if test_data:
+                trying = False
+        except serial.serialutil.SerialException as e:
+            # sys.stderr.write('Could not open serial port {}: {}\n'.format(port_num, e))
+            if port_num >= 10:
+                sys.exit(1)
+        port_num += 1
+    # print('com_port is now: {0}'.format(com_port))
 
     working = True
     while working:
@@ -48,13 +57,14 @@ def get_serial_nmea():
             gpgga.parse(str_data)
             lats = str(gpgga.parts[2])
             longs = str(gpgga.parts[4])
-            time_stamp = str(gpgga.parts[1])
-            alt = str(gpgga.parts[9])
+            time_stamp = str(gpgga.parts[1])  # not currently used by this script
+            alt = str(gpgga.parts[9])  # not currently used by this script
             ser.close()
             latitude_str = str(lats) + 'N' if str(gpgga.parts[3]).lower() == 'n' else str(lats) + 'S'
             longitude_str = str(longs) + 'E' if str(gpgga.parts[4]).lower() == 'e' else str(longs) + 'W'
-            gps_data_str = latitude_str + ',' + longitude_str
-            return gps_data_str
+            # gps_data_str = latitude_str + ',' + longitude_str
+            # return gps_data_str, com_port
+            return latitude_str + ',' + longitude_str, com_port
 
 
 def log_the_data(gps_dm_data):
@@ -100,8 +110,8 @@ def dms2dd(DMS):
         str_LONdd = str(rnd_LONdd)
     return '{0},{1}'.format(str_LATdd, str_LONdd)
 
-            
-DMS_data = get_serial_nmea()
+
+DMS_data, comport = get_serial_nmea()
 DD_data = dms2dd(DMS_data)
 DD_DMS_data = DMS_data + ', ' + DD_data
 log_the_data(DD_DMS_data)
