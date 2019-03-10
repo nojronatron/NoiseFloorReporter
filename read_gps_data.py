@@ -13,8 +13,9 @@
 # python.exe -m pip install pyserial
 # python.exe -m pip install pynmea
 #
-# 1-Feb-2019: Many updates to fix path issues and correct output and logging format
-#     also commented-out various non-ascii characters degree, minutes, and seconds signs
+# 10-Mar-2019:
+#     Removed dead/comment code
+#     Added snr_weight variable - an indicator of LEVEL OF NOISE (low noise = more negative; more noise = more positive)
 
 import sys
 import string
@@ -27,7 +28,7 @@ def get_serial_nmea():
     try:
         # TODO: Make port and baudrate arguments to script execution
         ser = serial.Serial(
-            port='COM8',  # Edit com port to match your GPS receiver COM number e.g. COM3 or COM8
+            port='COM7',  # Edit com port to match your GPS receiver COM number e.g. COM3 or COM8
             baudrate=4800,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
@@ -43,39 +44,15 @@ def get_serial_nmea():
     while working:
         data = ser.readline()
         str_data = str(data)
-        if 'GPGGA' in str_data:
-            # method for parsing the sentence
+        if 'GPGGA' in str_data:  # method for parsing the sentence
             gpgga.parse(str_data)
-            # print('gpgga_parts: {0}'.format(gpgga.parts))
             lats = str(gpgga.parts[2])
             longs = str(gpgga.parts[4])
-            # print('lats, longs: {0}, {1}'.format(lats, longs))
             time_stamp = str(gpgga.parts[1])
             alt = str(gpgga.parts[9])
             ser.close()
-            # lat_deg = lats[0:2]
-            # print('lat_deg: {0}'.format(lat_deg))
-            # lat_mins = lats[2:4]
-            # print('lat_mins: {0}'.format(lat_mins))
-            # lat_secs = int(round(float(lats[5:])*60/10000, 0))
-            # print('lat_secs: {0}'.format(lat_secs))
             latitude_str = str(lats) + 'N' if str(gpgga.parts[3]).lower() == 'n' else str(lats) + 'S'
-            # latitude_str = lat_deg + ' ' + lat_mins + '.' + str(lat_secs) + ' N'
-            # latitude_str = lat_deg + u'\N{DEGREE SIGN}' + lat_mins + string.printable[68] + str(lat_secs) + string.printable[63]
-            # print('latitude_str: {0}'.format(latitude_str))
-            # longs_deg = longs[0:3]
-            # print('longs_deg: {0}'.format(longs_deg))
-            # longs_mins = longs[3:5]
-            # print('longs_mins: {0}'.format(longs_mins))
-            # longs_secs = int(round(float(longs[6:])*60/10000, 0))
-            # print('longs_secs: {0}'.format(longs_secs))
             longitude_str = str(longs) + 'E' if str(gpgga.parts[4]).lower() == 'e' else str(longs) + 'W'
-            # if str(gpgga.parts[5]) == 'W':
-                # longitude_str = '-' + longs_deg + ' ' + longs_mins + '.' + str(longs_secs) + ' W'
-                # longitude_str = '-' + longs_deg + u'\N{DEGREE SIGN}' + longs_mins + string.printable[68] + str(longs_secs) + string.printable[63]
-            # else:
-                # longitude_str = longs_deg + ' ' + longs_mins + '.' + str(longs_secs) + ' E'
-                # longitude_str = longs_deg + u'\N{DEGREE SIGN}' + longs_mins + string.printable[68] + str(longs_secs) + string.printable[63]
             gps_data_str = latitude_str + ',' + longitude_str
             return gps_data_str
 
@@ -84,7 +61,6 @@ def log_the_data(gps_dm_data):
     with open(file='..\SDRuno_PWRSNR.csv') as csv_file:
         result = ''
         if csv_file.readable():
-            header = csv_file.readline()
             while True:
                 read_data = csv_file.readline()
                 if len(read_data) >= 5:
@@ -98,8 +74,9 @@ def log_the_data(gps_dm_data):
             print(result)
             return False
         else:
-            result.strip('\\n')
-            beacon_data = gps_dm_data + ', ' + result + '\n'
+            result_bits = result.split(',')
+            snr_weight = float(result_bits[3]) * -10
+            beacon_data = gps_dm_data + ', ' + result.replace('\n', '') + ', ' + str(snr_weight) + '\n'
             print(beacon_data)
             beacon_log.write(beacon_data)
 
@@ -107,7 +84,6 @@ def log_the_data(gps_dm_data):
 def dms2dd(DMS):
     DMS.strip("'")
     dms_split = str(DMS).split(',')  # ['4744.00N', '12219.73W']
-    # print('dms_split: {0}'.format(dms_split))
     LATdms = str(dms_split[0])  # '4744.00N'
     LONdms = str(dms_split[1])  # '12219.73W'
     LATdd = int(LATdms[0:2]) + (int(LATdms[2:4]) / 60) + (int(LATdms[5:7]) / 3600)  # LATdd: 47.733333333333334
